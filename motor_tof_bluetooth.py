@@ -139,7 +139,7 @@ while True:
     while ua.connected():
         counter += 1
 
-        if counter % 50000 == 0:
+        if counter % 500 == 0:
             write_rpms(get_all_rpm())
                 
         if ua.in_waiting():
@@ -160,7 +160,8 @@ while True:
         if dist:
             # Write the distance to BlueConnect and probably print statement for now
             msg = f"Distance: {dist} cm"
-            ua.write(msg)
+            if counter % 100 == 0:
+                ua.write(msg)
             print(msg)
             # set the distance at which you should go at an
             # appropriate throttle
@@ -169,4 +170,6 @@ while True:
             if throttle == 0:
                 if check_reverse():
                     maneuver_away_from_barrier()
+                    
+    set_throttle(0,0)
         
