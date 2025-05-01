@@ -4,8 +4,8 @@ import time
 
 i2c = board.I2C()  # uses board.SCL and board.SDA
 vl53 = adafruit_vl53l4cd.VL53L4CD(i2c)
-vl53.inter_measurement = 100 # the delay between measurements - slightly larger than timing_budget
-vl53.timing_budget = 50 # how long in ms to take a measurement - 10 - 200 ms
+vl53.inter_measurement = 0 # the delay between measurements - slightly larger than timing_budget
+vl53.timing_budget = 100 # how long in ms to take a measurement - 10 - 200 ms
 vl53.start_ranging()
 
 print("VL53L4CD Simple Test.")
