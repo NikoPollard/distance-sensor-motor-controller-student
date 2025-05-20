@@ -17,7 +17,7 @@ PWM_PIN_B2 = board.D8
 
 DISTANCE_THROTTLES = {
     0:0,
-    1:0,
+    1:0.5,
     2:0.5,
     3:0.6,
     4:0.7,
@@ -126,9 +126,10 @@ def maneuver_away_from_barrier():
     set_throttle(-1, -1)
     dist = ew_dist.read_distance()
     if dist == None: dist = 0
-    while dist < 40:
+    while dist < 20:
         dist = ew_dist.read_distance()
         if dist == None: dist = 0
+        else: print(dist)
     elapsed = time.monotonic()
     while time.monotonic() - elapsed < 4:
         set_throttle(-1, 1)

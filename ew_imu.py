@@ -19,7 +19,7 @@ class IMU:
         self.position = [0,0,0]
         self.rot_velocity = [0,0,0]
         self.orientation = [0,0,0]
-        self.accel_offsets = [0.18, -0.02, -0.02]
+        self.accel_offsets = [0.115, 0.03, -0.065]
         self.gyro_offsets = [0, 0.07, 0]
         self.dt = 0
 
@@ -70,10 +70,10 @@ class IMU:
 
     def update(self, dt):
         self.dt = dt
+        self.calculate_orientation()
         self.calculate_velocity()
         self.calculate_position()
         self.calculate_rot_velocity()
-        self.calculate_orientation()
     
 
 # To see data on Serial Monitor:

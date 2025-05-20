@@ -12,10 +12,15 @@ def setup(timing_budget = 25, time_between_measurements = 0):
     
 def read_distance():
     d = None
-    if vl53.data_ready:
-        if vl53.range_status == 0:
-            d = vl53.distance
-        elif vl53.range_status in [1,2]:
-            d = 160
-        vl53.clear_interrupt()
-    return d
+    try:
+        if vl53.data_ready:
+            rangestat = vl53.range_status
+            if rangestat == 0:
+                d = vl53.distance
+            elif rangestat in [1,2]:
+                d = 160
+            vl53.clear_interrupt()
+        return d
+    except Exception as e:
+        print(e)
+        return d

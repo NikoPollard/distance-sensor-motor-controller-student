@@ -8,7 +8,8 @@ import ew_distance as ew_dist
 ew_dist.setup()
 
 import ew_uart as ua
-import ew_imu as ua
+import ew_imu
+imu = ew_imu.IMU()
 ua.setup("Niko UART")
 
 PWM_PIN_A1 = board.D10  # pick any pwm pins on their own channels
@@ -137,7 +138,13 @@ def maneuver_away_from_barrier():
 counter = 0
 while True:
     ua.connect()
+    lastTime = time.monotonic_ns()
     while ua.connected():
+        dt = time.monotonic_ns()-lastTime
+        lastTime = time.monotonic_ns()
+        imu.update(dt)
+        print(imu.get_position(), imu.get_velocity(), imu.get_acceleration())
+        print(imu.get_orientation(), imu.get_rot_velocity(), imu.get_rot_acceleration())
         counter += 1
 
         if counter % 500 == 0:
