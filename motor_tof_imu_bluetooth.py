@@ -136,15 +136,14 @@ def maneuver_away_from_barrier():
         set_throttle(-1, 1)
 
 counter = 0
+imu.calibrate()
 while True:
     ua.connect()
-    lastTime = time.monotonic_ns()
+    lastTime = time.monotonic()
     while ua.connected():
-        dt = time.monotonic_ns()-lastTime
-        lastTime = time.monotonic_ns()
+        dt = time.monotonic()-lastTime
+        lastTime = time.monotonic()
         imu.update(dt)
-        print(imu.get_position(), imu.get_velocity(), imu.get_acceleration())
-        print(imu.get_orientation(), imu.get_rot_velocity(), imu.get_rot_acceleration())
         counter += 1
 
         if counter % 500 == 0:
@@ -170,7 +169,9 @@ while True:
             msg = f"Distance: {dist} cm"
             if counter % 100 == 0:
                 ua.write(msg)
-            print(msg)
+                print([f"{i:,.2f}" for i in imu.get_position()], [f"{i:,.2f}" for i in imu.get_velocity()], [f"{i:,.2f}" for i in imu.get_acceleration()],
+                      [f"{i:,.2f}" for i in imu.get_orientation()], [f"{i:,.2f}" for i in imu.get_rot_velocity()], [f"{i:,.2f}" for i in imu.get_rot_acceleration()],
+                      msg, end = "\r")
             # set the distance at which you should go at an
             # appropriate throttle
             throttle = DISTANCE_THROTTLES[dist//10]
