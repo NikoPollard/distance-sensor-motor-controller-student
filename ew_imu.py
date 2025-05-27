@@ -49,6 +49,19 @@ class IMU:
         self.dt = 0
         self.gravity = 9.81
         
+        # Motion detection parameters
+        self.motion_accel_threshold = 2.0    # m/s² - threshold for detecting motion vs stationary
+        self.motion_gyro_threshold = 0.1     # rad/s - threshold for detecting rotation
+
+        # Reduce the stationary threshold since we have better detection now
+        self.stationary_threshold = 50       # Reduced from 100
+        self.velocity_threshold = 0.05       # Slightly higher threshold
+
+        # Optional: Add high-pass filter for acceleration to remove slow drift
+        self.enable_accel_highpass = True
+        self.accel_highpass_alpha = 0.95     # High-pass filter coefficient
+        self.accel_highpass_prev = [0.0, 0.0, 0.0]
+        
         print("IMU initialized with advanced filtering")
 
     def get_acceleration(self):
@@ -156,30 +169,116 @@ class IMU:
         return accel_stable and gyro_stable and velocity_low
 
     def apply_complementary_filter(self):
-        """Apply complementary filter for orientation estimation"""
+        """Apply motion-aware complementary filter for orientation estimation"""
         accel = self.get_acceleration()
         gyro = self.get_rot_acceleration()
         
-        # Update gyro-based orientation (high-pass)
-        for i in range(3):
-            self.orientation[i] += gyro[i] * self.dt
+        # Calculate total acceleration magnitude
+        accel_magnitude = math.sqrt(accel[0]**2 + accel[1]**2 + accel[2]**2)
         
-        # Calculate accelerometer-based roll and pitch (low-pass)
-        if abs(accel[0]) < 15 and abs(accel[1]) < 15 and abs(accel[2]) < 15:  # Reasonable acceleration range
+        # Calculate gyro magnitude (how much rotation is happening)
+        gyro_magnitude = math.sqrt(gyro[0]**2 + gyro[1]**2 + gyro[2]**2)
+        
+        # Adaptive alpha based on motion
+        # When stationary (accel ≈ gravity, low gyro), trust accelerometer more
+        # When moving (accel ≠ gravity, high gyro), trust gyro more
+        
+        base_alpha = self.alpha  # Your original 0.96
+        
+        # Factor 1: How close is acceleration to gravity magnitude
+        gravity_error = abs(accel_magnitude - self.gravity)
+        if gravity_error < 1.0:  # Close to gravity - probably stationary
+            alpha_from_accel = base_alpha * 0.7  # Reduce alpha (trust accel more)
+        elif gravity_error < 3.0:  # Moderate motion
+            alpha_from_accel = base_alpha * 0.9
+        else:  # High acceleration - definitely moving
+            alpha_from_accel = 0.98  # Trust gyro almost completely
+        
+        # Factor 2: Gyro activity
+        if gyro_magnitude > 0.2:  # Significant rotation
+            alpha_from_gyro = 0.98  # Trust gyro more during rotation
+        elif gyro_magnitude > 0.05:  # Moderate rotation
+            alpha_from_gyro = base_alpha * 1.1
+        else:  # Low rotation
+            alpha_from_gyro = base_alpha
+        
+        # Combine factors - use the higher alpha (more gyro trust)
+        adaptive_alpha = min(0.99, max(alpha_from_accel, alpha_from_gyro))
+        
+        # Calculate accelerometer-based roll and pitch
+        if abs(accel[0]) < 20 and abs(accel[1]) < 20 and abs(accel[2]) < 20:  # Reasonable range
             accel_roll, accel_pitch = self.calculate_accel_angles(accel)
             
-            # Apply complementary filter for roll and pitch
-            self.filtered_orientation[0] = self.alpha * self.orientation[0] + (1 - self.alpha) * accel_roll
-            self.filtered_orientation[1] = self.alpha * self.orientation[1] + (1 - self.alpha) * accel_pitch
+            # Apply adaptive complementary filter
+            self.filtered_orientation[0] = adaptive_alpha * (self.filtered_orientation[0] + gyro[0] * self.dt) + (1 - adaptive_alpha) * accel_roll
+            self.filtered_orientation[1] = adaptive_alpha * (self.filtered_orientation[1] + gyro[1] * self.dt) + (1 - adaptive_alpha) * accel_pitch
             
-            # Yaw cannot be corrected by accelerometer alone
-            self.filtered_orientation[2] = self.orientation[2]
+            # Yaw - only gyro integration
+            self.filtered_orientation[2] += gyro[2] * self.dt
+            
         else:
-            # If acceleration is too high (dynamic motion), trust gyro completely
-            self.filtered_orientation = self.orientation[:]
+            # Extreme acceleration - trust gyro completely
+            for i in range(3):
+                self.filtered_orientation[i] += gyro[i] * self.dt
+        
+        # Keep angles in reasonable range
+        for i in range(3):
+            while self.filtered_orientation[i] > math.pi:
+                self.filtered_orientation[i] -= 2 * math.pi
+            while self.filtered_orientation[i] < -math.pi:
+                self.filtered_orientation[i] += 2 * math.pi
+        
+        # Update basic orientation for consistency
+        self.orientation = self.filtered_orientation[:]
+        
+        # # Debug output (remove after testing)
+        # if hasattr(self, 'debug_counter'):
+        #     self.debug_counter += 1
+        # else:
+        #     self.debug_counter = 0
+        
+        # if self.debug_counter % 100 == 0:  # Print every second at 100Hz
+        #     print(f"Motion: Alpha={adaptive_alpha:.3f}, AccelMag={accel_magnitude:.2f}, GyroMag={gyro_magnitude:.3f}")
+
+    def is_stationary(self):
+        """Enhanced stationary detection that considers motion state"""
+        # Calculate variance in recent measurements
+        accel_var = [0.0, 0.0, 0.0]
+        gyro_var = [0.0, 0.0, 0.0]
+        
+        # Calculate means
+        accel_mean = [0.0, 0.0, 0.0]
+        gyro_mean = [0.0, 0.0, 0.0]
+        
+        for i in range(len(self.accel_history)):
+            for j in range(3):
+                accel_mean[j] += self.accel_history[i][j]
+                gyro_mean[j] += self.gyro_history[i][j]
+        
+        for j in range(3):
+            accel_mean[j] /= len(self.accel_history)
+            gyro_mean[j] /= len(self.gyro_history)
+        
+        # Calculate variance
+        for i in range(len(self.accel_history)):
+            for j in range(3):
+                accel_var[j] += (self.accel_history[i][j] - accel_mean[j]) ** 2
+                gyro_var[j] += (self.gyro_history[i][j] - gyro_mean[j]) ** 2
+        
+        # Check if variance is low AND acceleration magnitude is close to gravity
+        accel_stable = all(var/len(self.accel_history) < self.accel_threshold**2 for var in accel_var)
+        gyro_stable = all(var/len(self.gyro_history) < self.gyro_threshold**2 for var in gyro_var)
+        velocity_low = all(abs(v) < self.velocity_threshold for v in self.velocity)
+        
+        # Additional check: is average acceleration magnitude close to gravity?
+        avg_accel_magnitude = math.sqrt(sum(accel_mean[i]**2 for i in range(3)))
+        gravity_consistent = abs(avg_accel_magnitude - self.gravity) < 1.0
+        
+        return accel_stable and gyro_stable and velocity_low and gravity_consistent
+        # return False
 
     def calculate_velocity_and_position(self):
-        """Calculate velocity and position in world frame with ZUPT"""
+        """Calculate velocity and position in world frame with ZUPT - IMPROVED VERSION"""
         # Get body frame acceleration
         body_accel = self.get_acceleration()
         gyro = self.get_rot_acceleration()
@@ -190,8 +289,17 @@ class IMU:
         # Transform acceleration to world frame
         world_accel = self.rotate_vector_to_world(body_accel)
         
+        # Store pre-gravity-removal values for debugging
+        world_accel_before_gravity = world_accel[:]
+        
         # Remove gravity (gravity acts in negative Z direction in world frame)
         world_accel[2] -= self.gravity
+        
+        # Debug: Check if gravity removal seems reasonable
+        gravity_removed_magnitude = abs(world_accel_before_gravity[2] - world_accel[2])
+        if abs(gravity_removed_magnitude - self.gravity) > 2.0:  # More than 2 m/s² error
+            print(f"WARNING: Gravity removal may be inaccurate. Expected ~{self.gravity:.1f}, got {gravity_removed_magnitude:.1f}")
+            print(f"  Orientation (deg): Roll={math.degrees(self.filtered_orientation[0]):.1f}, Pitch={math.degrees(self.filtered_orientation[1]):.1f}, Yaw={math.degrees(self.filtered_orientation[2]):.1f}")
         
         # Apply noise thresholding in world frame
         for i in range(3):
@@ -218,10 +326,15 @@ class IMU:
         for i in range(3):
             self.velocity[i] += world_accel[i] * self.dt
         
+        # Apply velocity decay to combat drift (optional)
+        velocity_decay = 0.995  # Very slight decay to prevent unbounded growth
+        for i in range(3):
+            self.velocity[i] *= velocity_decay
+        
         # Update position using trapezoidal integration
         for i in range(3):
             avg_velocity = (prev_velocity[i] + self.velocity[i]) / 2
-            self.position[i] += avg_velocity * self.dt
+        self.position[i] += avg_velocity * self.dt
 
     def zero_velocity(self):
         self.velocity = [0.0, 0.0, 0.0]

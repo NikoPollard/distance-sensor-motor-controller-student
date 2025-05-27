@@ -4,11 +4,11 @@ import pwmio
 import io
 from adafruit_motor import motor
 
-import ew_distance as ew_dist
+import lib.ew_distance as ew_dist
 ew_dist.setup()
 
-import ew_uart as ua
-import ew_imu
+import lib.ew_uart as ua
+import lib.ew_imu as ew_imu
 imu = ew_imu.IMU()
 ua.setup("Niko UART")
 
@@ -167,11 +167,11 @@ while True:
         if dist:
             # Write the distance to BlueConnect and probably print statement for now
             msg = f"Distance: {dist} cm"
-            if counter % 100 == 0:
+            if counter % 10 == 0:
                 ua.write(msg)
                 print([f"{i:,.2f}" for i in imu.get_position()], [f"{i:,.2f}" for i in imu.get_velocity()], [f"{i:,.2f}" for i in imu.get_acceleration()],
                       [f"{i:,.2f}" for i in imu.get_orientation()], [f"{i:,.2f}" for i in imu.get_rot_velocity()], [f"{i:,.2f}" for i in imu.get_rot_acceleration()],
-                      msg, end = "\r")
+                      msg, end = "\n")
             # set the distance at which you should go at an
             # appropriate throttle
             throttle = DISTANCE_THROTTLES[dist//10]
@@ -182,3 +182,4 @@ while True:
                     
     set_throttle(0,0)
         
+
